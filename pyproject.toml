@@ -1,0 +1,18 @@
+[project]
+name = "add-description"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-mock>=3",
+    "hypothesis>=6",
+    "anthropic",
+    "httpx",
+    "python-frontmatter",
+    "faker>=40.15.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
