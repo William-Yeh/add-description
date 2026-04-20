@@ -94,3 +94,42 @@ Add an optional **pass 3 (polish)** that calls the Claude API (`claude-haiku-4-5
 - **`validate_length` runs after polish**: The length check now reflects the final polished text. Polish typically increases CJK char count slightly (e.g. 代碼→程式碼 adds one char); no observed failures from the ordering.
 - **`anthropic` added to `# dependencies`**: `uv run` always installs it, so the deferred import inside `polish_zh_tw` is a startup-cost optimization rather than a hard conditional.
 - **Test coverage**: `polish_zh_tw` is covered by three unit tests (no-key skip, mocked success, exception fallback) plus one integration test that verifies the wiring inside `main()` for zh-TW content.
+
+---
+
+## Amendment — 2026-04-19 (heterogeneous draft/refine models)
+
+### Problem
+
+qwen3's mainland Chinese vocabulary defaults (軟件, 代碼, 接口…) persist into the draft and seed the refine pass. Pass 3 (Claude Haiku) corrects them, but if the draft pass were handled by TAIDE — which natively produces Traditional Chinese vocabulary — the Haiku polish pass would have lighter work and might be unnecessary for many files.
+
+The hypothesis: TAIDE as draft model may produce better zh-TW vocabulary coverage, while qwen3 as refine model reliably enforces prohibition rules (TAIDE fails the refine pass per the 2026-04-18 amendment).
+
+### Decision
+
+Add `--draft-model` as an optional argument to `generate_description.py`. When provided, pass 1 uses `--draft-model` and passes 2/retry use `--model`. When omitted, both passes use `--model` (existing behaviour).
+
+SKILL.md auto-detects any installed TAIDE model via `ollama list | grep -i taide`, sets `DRAFT_MODEL`, and always passes `--draft-model "$DRAFT_MODEL"`. When no TAIDE is found, `DRAFT_MODEL=$MODEL` and the behaviour is identical to the prior version.
+
+### Consequences
+
+- **Backward-compatible**: `--draft-model` is optional; all existing callers and tests continue to work.
+- **Test**: one new mock test (`test_main_uses_draft_model_for_pass1_only`) verifies the routing — pass 1 receives the draft model, pass 2 receives the refine model.
+
+### Experiment result — 2026-04-19
+
+Tested TAIDE 12B Q4_K_M (`hf.co/audreyt/Gemma-3-TAIDE-12b-Chat-2602-GGUF:Q4_K_M`) as draft model against 10 real blog posts (12–27KB). 9/10 timed out (300s ceiling). The one success was a short English article; every zh-TW post failed regardless of size.
+
+Root cause: TAIDE 12B Q4_K_M generates too slowly on the 6 000-char truncated body to finish the draft pass within 300s. The quality hypothesis (better Traditional Chinese vocabulary in the draft → lighter Haiku polish in pass 3) could not be evaluated because the model never completed.
+
+**Decision**: SKILL.md auto-detection of TAIDE reverted. The `--draft-model` flag remains in the script for future experiments with faster models. The skill uses a single model for both passes.
+
+### Experiment result — 2026-04-20 (Llama-Breeze2-8B)
+
+Tested `hf.co/mradermacher/Llama-Breeze2-8B-Instruct-text-only-GGUF:Q4_K_M` in three configurations against the same 10-post corpus:
+
+**Config A — Breeze2 draft + qwen3:8b refine**: 6/10 completed (1 timeout on 16KB). Breeze2 drafts were 100% meta-narration ("這篇文章討論了", "作者引用了", "文章強調了") despite the full prohibition list in the prompt — same training-prior problem as TAIDE. qwen3 cleaned up the meta-narration in the refine pass, producing usable output, but `透過` leaked through in at least one case. Breeze2's draft did carry useful keyword/topic coverage despite the structural problems.
+
+**Config B — qwen3:8b draft + Breeze2 refine**: Failed immediately. Breeze2 as refiner produced prohibited output ("本文指出", "文章提出六大議題") on the first file. Breeze2 ignores the prohibition in both roles.
+
+**Conclusion**: Breeze2 cannot enforce the meta-narration prohibition in any pass position. qwen3 must be the refiner. Breeze2 as draft (Config A) is mechanically workable — it completes within the timeout and qwen3 successfully sanitises its output — but offers no demonstrated quality advantage over qwen3 drafting for itself. Both models produce prohibition-violating drafts; the difference is that qwen3 reliably corrects its own draft patterns while Breeze2 does not.

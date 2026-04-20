@@ -72,6 +72,9 @@ persona, `temperature=0.5`/`repeat_penalty=1.1`), Ollama API call, post-processi
 Claude API polish pass for zh-TW content (converts mainland Chinese terms and
 simplified characters to Taiwan usage — activated when `ANTHROPIC_API_KEY` is set).
 
+To experiment with a heterogeneous draft/refine pipeline, pass `--draft-model <model>`
+explicitly. The script uses it for pass 1 only; pass 2 and retry always use `--model`.
+
 - **stdout**: the generated description text
 - **stderr**: `ABORT: …` if too short, `WARN: …` if too long
 - **exit 0**: proceed to write; **exit 1**: abort this file

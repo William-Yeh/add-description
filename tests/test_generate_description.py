@@ -131,6 +131,23 @@ def test_main_retries_once_on_title_repetition(mocker, tmp_path):
     assert mock_call.call_count == 3
 
 
+def test_main_uses_draft_model_for_pass1_only(mocker, tmp_path):
+    md = tmp_path / "article.md"
+    md.write_text("---\ntitle: Test Article\n---\n" + "English sentence. " * 30)
+    desc = " ".join(["word"] * 35)
+
+    mock_call = mocker.patch("generate_description.call_ollama", side_effect=[
+        "draft content",  # pass 1
+        desc,             # pass 2
+    ])
+    mocker.patch("sys.argv", ["prog", "--model", "qwen3:8b", "--draft-model", "taide-model", str(md)])
+
+    gd.main()
+    assert mock_call.call_count == 2
+    assert mock_call.call_args_list[0].args[0] == "taide-model"
+    assert mock_call.call_args_list[1].args[0] == "qwen3:8b"
+
+
 def test_main_uses_filename_stem_when_no_title(mocker, tmp_path, capsys):
     md = tmp_path / "my-article.md"
     md.write_text("---\ntags: [test]\n---\n" + "English sentence. " * 30)

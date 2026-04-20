@@ -86,8 +86,17 @@ _ZH_DRAFT_USER = """\
 - 目標長度：約 150–200 字
 - 涵蓋所有主要論點，不可只寫前半段
 - 帶入文章核心關鍵字
-- 直接陳述知識與結論；不使用「文章探討了」「作者指出」「在文章中」等間接句型
-- 直接輸出文字，不加引號、不加前綴說明
+- 嚴格禁用一切中介語句型（零容忍）：  # keep in sync with _ZH_REFINE_USER
+  - 以「文章」「本文」「這篇」「本篇」「此文」「該文」為主詞的句子，無論動詞為何
+    （例：「文章探討了」「文章指出」「文章以⋯⋯為例」「文章引用」「文章說明」
+         「文章介紹」「文章建議」「文章認為」「文章分析」「文章提到」「文章強調」
+         「文章將」「文章舉」「文章並」「文章還」）
+  - 以「作者」為主詞的句子，無論動詞為何
+    （例：「作者認為」「作者指出」「作者以⋯⋯為例」「作者提到」「作者強調」
+         「作者說明」「作者分析」「作者建議」「作者引用」「作者舉例」）
+  - 其他間接句型：「在文章中」「在本文中」「在這篇」「將幫助」「將探討」「將分析」
+    「讀者將」「看這篇」「讓你」「讓讀者」
+- 直接陳述知識內容；直接輸出文字，不加引號、不加前綴說明
 
 標題：{title}
 
@@ -111,8 +120,14 @@ Requirements:
 - Target: ~150–200 words
 - Cover all major points, not just the opening
 - Include the article's core keywords
-- Present knowledge directly; do not use "the article discusses", "the author argues", \
-"in this article", or similar meta-commentary
+- Strictly no meta-language of any form (zero tolerance) — no use of \
+"this article", "this post", "this piece", "the article", "the post" or \
+"the author", "the writer" as the subject, regardless of verb \
+(e.g. "explores", "discusses", "covers", "shows", "argues", "explains", "uses", \
+"examines", "cites", "suggests", "demonstrates", "presents", "proposes", \
+"walks through", "introduces", "highlights", "notes"); \
+also ban "in this article/post", "readers will", "you will learn", \
+"we discuss", "read this", "this guide"  # keep in sync with _EN_REFINE_USER
 - Output only the extracted text, no quotes, no prefixes
 
 Title: {title}
@@ -138,7 +153,7 @@ _ZH_REFINE_USER = """\
 
 要求：
 - 台灣現代繁體中文，自然口語
-- 嚴格禁用一切中介語句型（零容忍）：
+- 嚴格禁用一切中介語句型（零容忍）：  # keep in sync with _ZH_DRAFT_USER
   - 以「文章」「本文」「這篇」「本篇」「此文」「該文」為主詞的句子，無論動詞為何
     （例：「文章探討了」「文章指出」「文章以⋯⋯為例」「文章引用」「文章說明」
          「文章介紹」「文章建議」「文章認為」「文章分析」「文章提到」「文章強調」
@@ -176,7 +191,7 @@ Requirements:
 "examines", "cites", "suggests", "demonstrates", "presents", "proposes", \
 "walks through", "introduces", "highlights", "notes"); \
 also ban "in this article/post", "readers will", "you will learn", \
-"we discuss", "read this", "this guide"
+"we discuss", "read this", "this guide"  # keep in sync with _EN_DRAFT_USER
 - No calls-to-action or persuasive hooks; no exclamation marks
 - All direct statements; lead with concrete claims and criteria, not structural descriptions
 - Each sentence independently quotable by an AI answer engine
@@ -289,8 +304,11 @@ def validate_length(text: str, lang: Lang) -> tuple[int, str, int]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
+    parser.add_argument("--draft-model")
     parser.add_argument("file", type=Path)
     args = parser.parse_args()
+
+    draft_model = args.draft_model or args.model
 
     post = frontmatter.load(args.file)
     body = truncate_body(post.content)
@@ -298,7 +316,7 @@ def main() -> None:
     title = str(post.get("title", args.file.stem))
 
     draft_system, draft_user = build_draft_prompts(lang, title, body)
-    draft = call_ollama(args.model, draft_system, draft_user)
+    draft = call_ollama(draft_model, draft_system, draft_user)
 
     ref_system, ref_user = build_refine_prompts(lang, draft)
     desc = strip_prefixes(call_ollama(args.model, ref_system, ref_user), lang)
