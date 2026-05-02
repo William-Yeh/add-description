@@ -27,14 +27,16 @@ Usage: /add-description [--dry-run] <file> [<file> ...]
 
 ### 2. Check Ollama and select model
 
-```bash
-ollama list 2>/dev/null | grep -qi "qwen3:8b"
-```
+Probe local models in priority order. For each row, run
+`ollama list 2>/dev/null | grep -qi <regex>`; the first match wins.
 
-- Exit 0 → `MODEL=qwen3:8b`
-- Non-0  → `MODEL=qwen3:1.7b` (fallback)
+| Priority | Model         | Regex                |
+|----------|---------------|----------------------|
+| 1        | `qwen3.5:9b`  | `qwen3\.5:9b`        |
+| 2        | `qwen3:8b`    | `qwen3:8b`           |
+| 3        | `qwen3:1.7b`  | (fallback, no probe) |
 
-If `ollama list` itself fails (Ollama not running), abort all files with:
+Set `MODEL` to the first matching name. If `ollama list` itself fails (Ollama not running), abort all files with:
 ```
 Error: Ollama is not running. Start it with: ollama serve
 ```

@@ -204,6 +204,10 @@ Draft:
 
 _OLLAMA_OPTIONS = types.MappingProxyType({"temperature": 0.5, "repeat_penalty": 1.1})
 
+# Models whose reasoning lands in a separate `thinking` field; require
+# `"think": false` to avoid an empty `response`.
+_THINKING_FIELD_MODELS = frozenset({"qwen3.5:9b"})
+
 # ── Pass 3: Taiwan zh-TW polish (Claude API, optional) ───────────────────────
 
 _ZH_POLISH_SYSTEM = """\
@@ -270,11 +274,14 @@ def strip_prefixes(text: str, lang: Lang) -> str:
 
 
 def call_ollama(model: str, system: str, prompt: str) -> str:
+    payload: dict[str, object] = {"model": model, "system": system, "prompt": prompt,
+                                  "stream": False, "options": dict(_OLLAMA_OPTIONS)}
+    if model in _THINKING_FIELD_MODELS:
+        payload["think"] = False
     try:
         r = httpx.post(
             "http://localhost:11434/api/generate",
-            json={"model": model, "system": system, "prompt": prompt, "stream": False,
-                  "options": dict(_OLLAMA_OPTIONS)},
+            json=payload,
             timeout=300.0,
         )
         r.raise_for_status()

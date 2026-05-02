@@ -133,3 +133,47 @@ Tested `hf.co/mradermacher/Llama-Breeze2-8B-Instruct-text-only-GGUF:Q4_K_M` in t
 **Config B — qwen3:8b draft + Breeze2 refine**: Failed immediately. Breeze2 as refiner produced prohibited output ("本文指出", "文章提出六大議題") on the first file. Breeze2 ignores the prohibition in both roles.
 
 **Conclusion**: Breeze2 cannot enforce the meta-narration prohibition in any pass position. qwen3 must be the refiner. Breeze2 as draft (Config A) is mechanically workable — it completes within the timeout and qwen3 successfully sanitises its output — but offers no demonstrated quality advantage over qwen3 drafting for itself. Both models produce prohibition-violating drafts; the difference is that qwen3 reliably corrects its own draft patterns while Breeze2 does not.
+
+---
+
+## Amendment — 2026-05-02 (qwen3.5:9b and the second thinking-mode shape)
+
+### Problem
+
+`qwen3.5:9b` (a 6.6 GB model in the qwen2.5-thinking lineage despite the name) was not usable as a drop-in for the existing pipeline. Two distinct issues:
+
+1. **Different thinking emission shape**: qwen3.5 puts reasoning in a separate top-level `thinking` field in `/api/generate` responses, leaving `response` empty. The existing `_THINK_TAG` regex (added 2026-04-18) strips inline `<think>…</think>` blocks from `response` and does not see the new field.
+2. **Reasoning runtime exceeds the 300s ceiling** on real article bodies, so the request times out before the empty `response` is even returned.
+
+Both problems are sidestepped by Ollama's request-level `"think": false` flag.
+
+### Decision
+
+- Promote `qwen3.5:9b` to top of the model priority ladder in SKILL.md: `qwen3.5:9b` → `qwen3:8b` → `qwen3:1.7b`.
+- Introduce `_THINKING_FIELD_MODELS = frozenset({"qwen3.5:9b"})` in `generate_description.py`. `call_ollama()` adds `"think": false` to the request body **only** for models in that set.
+- Existing models (`qwen3:8b`, `qwen3:1.7b`) keep their prior runtime behavior: reasoning is still emitted inline as `<think>…</think>` and stripped via `_THINK_TAG` at the I/O boundary. No quality regression on the previous default.
+
+### Comparative evaluation — 2026-05-02
+
+Tested both models against four real zh-TW blog posts spanning 12–26 KB. `ANTHROPIC_API_KEY` was set, so the Haiku polish pass (pass 3) ran for both — measurements reflect end-to-end production output, not raw local-model output.
+
+| File | Bytes | qwen3:8b time | qwen3.5:9b time | qwen3:8b chars | qwen3.5:9b chars |
+|---|---:|---:|---:|---:|---:|
+| genai-guardrail.md         | 12 656 | 124 s | 74 s  | 193 | 162 |
+| genai-multi-steps.md       | 13 191 | 98 s  | 59 s  | 158 | 157 |
+| genai-pl.md                | 22 513 | 221 s | 87 s  | 192 | 182 |
+| genai-replacement-ratio.md | 26 439 | 173 s | 117 s | 139 | 258 |
+| **Total**                  |        | **616 s** | **337 s** | | |
+
+- **Latency**: qwen3.5:9b is 1.5–2.5× faster per file, ~45% faster across the corpus. Largest gap on the 22 KB file (`genai-pl.md`: 221 s → 87 s, 2.54× faster), suggesting qwen3.5 scales better on long context.
+- **Meta-narration prohibition**: 0 / 8 violations on either model. Both pass the zero-tolerance check on `文章/本文/作者 + verb` patterns enforced in pass 2.
+- **Length**: both stay above `MIN_ZH_CHARS=60`; no `WARN` from over-length on any run. qwen3.5:9b tends to expand on the longest input (`genai-replacement-ratio.md` at 258 chars vs qwen3:8b's 139), reflecting a slight verbosity bias not seen on shorter inputs.
+- **Style**: qwen3.5:9b uses denser, more concrete domain phrasing in several places (e.g. "可阻斷的工具鏈", "規格驅動開發", "成本不升、產出不降"); qwen3:8b is pithier and more uniform across files. Neither output is clearly worse — the choice is stylistic, not correctness.
+- **Polish-pass impact**: post-Haiku, both outputs use Taiwan vocabulary consistently (`型別`, `程式碼`, `介面`, `資料`); no PRC terms slipped through on either model. Pass 3 normalises away the dialect differences that appeared in earlier amendments' raw-local comparisons.
+
+### Consequences
+
+- **Backward-compatible**: the conditional gate means callers and tests for `qwen3:8b` / `qwen3:1.7b` see no change in request payload or response shape.
+- **Future thinking-field models** (qwen2.5-thinking variants, gpt-oss, others that adopt the separate-field convention) extend by adding their tag to the frozenset — no code change to `call_ollama()`.
+- **Test coverage**: two new tests (`test_call_ollama_disables_thinking_for_qwen3_5`, `test_call_ollama_omits_think_flag_for_qwen3`) lock the request payload shape via `httpx.MockTransport`, protecting against accidental removal of the conditional or its inversion.
+- **Recommendation**: qwen3.5:9b is now the preferred default for users who can spare the 6.6 GB disk + VRAM. Quality is on par with qwen3:8b and latency is materially better, especially on long articles.

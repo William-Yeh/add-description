@@ -1,6 +1,8 @@
+import json
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 from faker import Faker
 from hypothesis import assume, given, settings
@@ -315,6 +317,35 @@ def test_polish_zh_tw_falls_back_on_exception(monkeypatch, mocker, capsys):
     result = gd.polish_zh_tw(original)
     assert result == original
     assert "WARN" in capsys.readouterr().err
+
+
+# ── call_ollama request shape ─────────────────────────────────────────────────
+
+def _capture_ollama_payload(model: str, mocker) -> bytes:
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = request.read()
+        return httpx.Response(200, json={"response": "ok"})
+
+    def fake_post(*args, **kwargs):
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            return client.post(*args, **kwargs)
+
+    mocker.patch.object(gd.httpx, "post", fake_post)
+    gd.call_ollama(model, "sys", "user")
+    return captured["payload"]
+
+
+def test_call_ollama_disables_thinking_for_qwen3_5(mocker):
+    body = json.loads(_capture_ollama_payload("qwen3.5:9b", mocker))
+    assert body["think"] is False
+
+
+def test_call_ollama_omits_think_flag_for_qwen3(mocker):
+    """qwen3:8b emits <think>...</think> inline; we let it run and strip the output."""
+    body = json.loads(_capture_ollama_payload("qwen3:8b", mocker))
+    assert "think" not in body
 
 
 # ── Integration tests (require Ollama) ────────────────────────────────────────

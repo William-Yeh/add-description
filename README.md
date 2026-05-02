@@ -41,6 +41,16 @@ Generation runs in up to three passes:
 
 Additional guardrails: title-repetition retry, minimum length check (60 CJK chars / 30 EN words), and optional length warning on over-long output.
 
+### Local model selection
+
+The skill probes Ollama and picks the first available model from this priority list:
+
+1. `qwen3.5:9b` — preferred when present. Uses Ollama's `"think": false` request flag, since this model emits reasoning in a separate `thinking` JSON field that the script does not consume.
+2. `qwen3:8b` — previous default. Reasoning is emitted inline as `<think>…</think>` and stripped from the final output.
+3. `qwen3:1.7b` — fallback when neither of the above is present.
+
+If you want to pin a specific model regardless of what is installed, invoke the script directly with `--model <name>`. To experiment with a heterogeneous draft/refine split, also pass `--draft-model <name>`; pass 1 will use the draft model, pass 2 and the retry will use `--model`.
+
 ## Credits
 
 Inspired by Jacob Mei's blog post "[繁體中文專用 Obsidian 語意搜尋插件 Vault Search](https://jacobmei.com/blog/2026/0404-n6nst4/)": using a local `qwen3:1.7b` model to generate a 50–100 character summary for each note and store it in the frontmatter `description` field.
